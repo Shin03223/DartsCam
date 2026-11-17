@@ -3,43 +3,72 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>DARTS CAMERA</title>
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DARTS REMOTE">
+<title>DARTS REMOTE</title>
 <style>
-  body { margin:0; background:#111; color:#fff; font-family:sans-serif; text-align:center; padding:10px; }
-  .box { position:relative; width:300px; height:300px; margin:10px auto; border:2px solid #00e5ff; overflow:hidden; background:#000; }
-  video { width:300px; height:300px; object-fit:cover; }
-  button { padding:12px 16px; font-size:15px; font-weight:bold; border:none; border-radius:8px; margin:5px; }
+  body { margin:0; background:#111; color:#fff; font-family:sans-serif; text-align:center; padding:12px; user-select:none; }
+  h3 { margin:4px 0 8px; color:#ffd700; font-size:18px; }
+  #msg { font-size:14px; color:#80cbc4; font-weight:bold; margin-bottom:10px; }
+  .top-btns { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; max-width:360px; margin:0 auto 12px; }
+  .mult-btns { display:grid; grid-template-columns:1fr 1fr 1fr; gap:8px; max-width:360px; margin:0 auto 14px; }
+  .num-grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:8px; max-width:360px; margin:0 auto; }
+  button { padding:14px 4px; font-size:15px; font-weight:bold; border:none; border-radius:8px; cursor:pointer; }
+  button:active { transform:scale(0.95); }
+  .btn-ib { background:#e91e63; color:#fff; }
+  .btn-ob { background:#ff9800; color:#000; }
+  .btn-miss { background:#444; color:#ccc; }
+  .btn-m { background:#222; color:#aaa; border:2px solid #444; }
+  .btn-m.active { background:#00e5ff; color:#000; border-color:#00e5ff; }
+  .btn-num { background:#1e222b; color:#fff; border:1px solid #3a4052; font-size:18px; padding:16px 0; }
 </style>
 </head>
 <body>
-  <h3 style="color:#ffd700;">DARTS CAMERA</h3>
-  <div id="msg" style="color:#80cbc4; font-weight:bold; margin:8px;">待機中</div>
-  <button id="btnCam" style="background:#e91e63; color:#fff;">カメラ起動</button>
-  <button id="btnTest" style="background:#ff9800; color:#000;">テスト送信</button>
-  <div class="box">
-    <video id="vid" autoplay playsinline muted></video>
+  <h3>🎯 DARTS REMOTE</h3>
+  <div id="msg">刺さった場所をタップしてください</div>
+
+  <div class="top-btns">
+    <button class="btn-ib" onclick="sendCode('ib')">IN-BULL</button>
+    <button class="btn-ob" onclick="sendCode('ob')">OUT-BULL</button>
+    <button class="btn-miss" onclick="sendCode('00s')">MISS (0)</button>
   </div>
+
+  <div class="mult-btns">
+    <button id="m-s" class="btn-m active" onclick="setMult('s')">SINGLE</button>
+    <button id="m-d" class="btn-m" onclick="setMult('d')">DOUBLE</button>
+    <button id="m-t" class="btn-m" onclick="setMult('t')">TRIPLE</button>
+  </div>
+
+  <div class="num-grid" id="numGrid"></div>
+
   <script>
-    var msg = document.getElementById('msg');
-    document.getElementById('btnTest').onclick = function() {
-      msg.innerText = 'テスト送信実行中...';
-      fetch('https://ntfy.sh')
-        .then(function() { msg.innerText = '送信完了: IB'; })
-        .catch(function(e) { msg.innerText = '送信失敗: ' + e.message; });
-    };
-    document.getElementById('btnCam').onclick = function() {
-      msg.innerText = 'カメラ許可を要求中...';
-      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
-        .then(function(stream) {
-          var vid = document.getElementById('vid');
-          vid.srcObject = stream;
-          vid.play();
-          msg.innerText = 'カメラ起動成功！';
-        })
-        .catch(function(err) {
-          msg.innerText = 'エラー: ' + err.name + ' / ' + err.message;
-        });
-    };
+    var mult = 's';
+    var grid = document.getElementById('numGrid');
+    for (var i = 1; i <= 20; i++) {
+      var btn = document.createElement('button');
+      btn.className = 'btn-num';
+      btn.innerText = i;
+      btn.setAttribute('data-num', i);
+      btn.onclick = function() {
+        var n = String(this.getAttribute('data-num')).padStart(2, '0');
+        sendCode(n + mult);
+        setMult('s');
+      };
+      grid.appendChild(btn);
+    }
+
+    function setMult(m) {
+      mult = m;
+      document.getElementById('m-s').className = (m === 's') ? 'btn-m active' : 'btn-m';
+      document.getElementById('m-d').className = (m === 'd') ? 'btn-m active' : 'btn-m';
+      document.getElementById('m-t').className = (m === 't') ? 'btn-m active' : 'btn-m';
+    }
+
+    function sendCode(code) {
+      document.getElementById('msg').innerText = '送信: ' + code.toUpperCase();
+      window.location.href = 'shortcuts://run-shortcut?name=' + encodeURIComponent('ダーツ送信') + '&input=' + encodeURIComponent(code);
+    }
   </script>
 </body>
 </html>
