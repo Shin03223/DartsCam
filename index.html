@@ -1,0 +1,267 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="DARTS CAM">
+<title>DARTS CAMERA AI</title>
+<style>
+  body { margin:0; background:#111; color:#fff; font-family:sans-serif; text-align:center; padding:8px; }
+  h3 { margin:4px 0; color:#ffd700; font-size:16px; }
+  .row { margin:6px auto; display:flex; justify-content:center; align-items:center; gap:6px; font-size:13px; }
+  input[type=text] { width:110px; padding:6px; border-radius:4px; border:1px solid #00e5ff; background:#222; color:#ffd700; font-weight:bold; text-align:center; }
+  .box { position:relative; width:320px; height:320px; margin:6px auto; border:2px solid #00e5ff; border-radius:8px; overflow:hidden; background:#000; touch-action:none; }
+  video { position:absolute; top:0; left:0; width:320px; height:320px; object-fit:cover; transform-origin:center center; }
+  canvas { position:absolute; top:0; left:0; width:320px; height:320px; }
+  .panel { width:310px; margin:6px auto; background:#1c1e24; padding:8px; border-radius:6px; font-size:12px; }
+  .z-btn { padding:6px 14px; background:#333; color:#fff; border:1px solid #666; border-radius:4px; font-weight:bold; font-size:16px; }
+  button.act { padding:10px 14px; font-size:13px; font-weight:bold; border:none; border-radius:6px; cursor:pointer; }
+</style>
+</head>
+<body>
+  <h3>🎯 DARTS CAMERA AI</h3>
+  <div class="row">
+    <span>合言葉:</span>
+    <input type="text" id="roomInput" value="darts777">
+    <button type="button" onclick="sendHit('ib')" style="padding:6px 10px; background:#ff9800; color:#000; border:none; border-radius:4px; font-weight:bold;">テスト送信</button>
+  </div>
+
+  <div class="box">
+    <video id="vid" autoplay playsinline muted></video>
+    <canvas id="overlay" width="320" height="320"></canvas>
+  </div>
+
+  <div class="panel">
+    <div class="row">
+      <span id="zoomLabel" style="width:90px; text-align:left; font-weight:bold;">ズーム: 1.00x</span>
+      <button type="button" onclick="stepZoom(-0.2)" class="z-btn">－</button>
+      <input type="range" id="zoomRange" min="1.0" max="4.0" step="0.05" value="1.0" oninput="updateZoom(this.value)" style="flex:1;">
+      <button type="button" onclick="stepZoom(0.2)" class="z-btn">＋</button>
+    </div>
+    <div class="row">
+      <span id="sideLabel" style="width:110px; text-align:left; font-weight:bold;">設置位置: 左横</span>
+      <button type="button" onclick="toggleSide()" style="padding:6px 10px; background:#9c27b0; color:#fff; border:none; border-radius:4px; font-weight:bold;">左横 / 右横 切替</button>
+    </div>
+  </div>
+
+  <div id="msg" style="font-size:13px; color:#80cbc4; margin:6px; font-weight:bold;">待機中：「テスト送信」または「カメラ起動」を押してください</div>
+
+  <div class="row">
+    <button type="button" onclick="startCam()" class="act" style="background:#e91e63; color:#fff;">カメラ起動</button>
+    <button type="button" onclick="captureBase()" class="act" style="background:#2b8be6; color:#fff;">1. 基準撮影</button>
+    <button type="button" id="btnAuto" onclick="toggleAuto()" class="act" style="background:#28a745; color:#fff;">2. 認識 START</button>
+  </div>
+
+  <script>
+    var vid = document.getElementById('vid');
+    var overlay = document.getElementById('overlay');
+    var ctx = overlay.getContext('2d');
+    var off = document.createElement('canvas');
+    off.width = 320; off.height = 320;
+    var offCtx = off.getContext('2d');
+    var msg = document.getElementById('msg');
+
+    var baseData = null;
+    var detecting = false;
+    var cooldown = false;
+    var zoomVal = 1.0;
+    var cameraSide = 'LEFT';
+    var boardNums = "20,1,18,4,13,6,10,15,2,17,3,19,7,16,8,11,14,9,12,5".split(",");
+
+    var pTop = { x: 160, y: 20, label: '20上' };
+    var pRight = { x: 250, y: 160, label: '6右' };
+    var pBottom = { x: 160, y: 300, label: '3下' };
+    var pLeft = { x: 70, y: 160, label: '11左' };
+    var dragPt = null;
+
+    function sendHit(code) {
+      var room = document.getElementById('roomInput').value.trim().toLowerCase() || 'darts777';
+      msg.innerText = '送信中: ' + code.toUpperCase();
+      fetch('https://ntfy.sh' + room + '/publish?message=' + code)
+        .then(function() { msg.innerText = '送信完了: ' + code.toUpperCase(); })
+        .catch(function(e) { msg.innerText = '送信エラー: ' + e.message; });
+    }
+
+    function toggleSide() {
+      cameraSide = (cameraSide === 'LEFT') ? 'RIGHT' : 'LEFT';
+      document.getElementById('sideLabel').innerText = (cameraSide === 'LEFT') ? '設置位置: 左横' : '設置位置: 右横';
+    }
+
+    function stepZoom(diff) { updateZoom(zoomVal + diff); }
+
+    function updateZoom(val) {
+      zoomVal = Math.max(1.0, Math.min(4.0, parseFloat(val)));
+      document.getElementById('zoomRange').value = zoomVal.toFixed(2);
+      document.getElementById('zoomLabel').innerText = 'ズーム: ' + zoomVal.toFixed(2) + 'x';
+      vid.style.transform = 'scale(' + zoomVal + ')';
+    }
+
+    function startCam() {
+      msg.innerText = 'カメラ要求中...';
+      navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' }, audio: false })
+        .then(function(stream) {
+          vid.srcObject = stream;
+          vid.play();
+          drawGuide(-1, -1);
+          msg.innerText = 'カメラOK！ズームと4点で枠を合わせて「1. 基準撮影」';
+        })
+        .catch(function(err) {
+          msg.innerText = 'カメラエラー: ' + err.name + ' - ' + err.message;
+        });
+    }
+
+    function captureFrame() {
+      offCtx.fillStyle = '#000';
+      offCtx.fillRect(0, 0, 320, 320);
+      var vw = vid.videoWidth || 320;
+      var vh = vid.videoHeight || 320;
+      var side = Math.min(vw, vh);
+      var sx = (vw - side) / 2;
+      var sy = (vh - side) / 2;
+      offCtx.save();
+      offCtx.translate(160, 160);
+      offCtx.scale(zoomVal, zoomVal);
+      offCtx.drawImage(vid, sx, sy, side, side, -160, -160, 320, 320);
+      offCtx.restore();
+    }
+
+    function getEllipse() {
+      var cx = (pTop.x + pRight.x + pBottom.x + pLeft.x) / 4;
+      var cy = (pTop.y + pRight.y + pBottom.y + pLeft.y) / 4;
+      var rx = Math.hypot(pRight.x - pLeft.x, pRight.y - pLeft.y) / 2;
+      var ry = Math.hypot(pBottom.x - pTop.x, pBottom.y - pTop.y) / 2;
+      var rot = Math.atan2(pRight.y - pLeft.y, pRight.x - pLeft.x);
+      return { cx: cx, cy: cy, rx: rx, ry: ry, rot: rot };
+    }
+
+    function drawGuide(hx, hy) {
+      ctx.clearRect(0, 0, 320, 320);
+      var e = getEllipse();
+      ctx.save();
+      ctx.translate(e.cx, e.cy);
+      ctx.rotate(e.rot);
+      ctx.strokeStyle = 'rgba(0, 229, 255, 0.85)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.ellipse(0, 0, Math.max(4, e.rx), Math.max(4, e.ry), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, Math.max(4, e.rx * 0.62), Math.max(4, e.ry * 0.62), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.ellipse(0, 0, Math.max(4, e.rx * 0.12), Math.max(4, e.ry * 0.12), 0, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
+
+      var list = Array.of(pTop, pRight, pBottom, pLeft);
+      for (var i = 0; i < list.length; i++) {
+        var p = list.at(i);
+        ctx.fillStyle = '#ffd700';
+        ctx.beginPath(); ctx.arc(p.x, p.y, 10, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = '#000';
+        ctx.font = 'bold 9px sans-serif';
+        ctx.fillText(p.label, p.x - 10, p.y - 13);
+      }
+      if (hx >= 0) {
+        ctx.fillStyle = '#ff3b3b';
+        ctx.beginPath(); ctx.arc(hx, hy, 6, 0, Math.PI * 2); ctx.fill();
+      }
+    }
+
+    overlay.onpointerdown = function(e) {
+      var rect = overlay.getBoundingClientRect();
+      var px = e.clientX - rect.left;
+      var py = e.clientY - rect.top;
+      var minD = 40;
+      dragPt = null;
+      var list = Array.of(pTop, pRight, pBottom, pLeft);
+      for (var i = 0; i < list.length; i++) {
+        var p = list.at(i);
+        var d = Math.hypot(p.x - px, p.y - py);
+        if (d < minD) { minD = d; dragPt = p; }
+      }
+    };
+
+    overlay.onpointermove = function(e) {
+      if (!dragPt) return;
+      var rect = overlay.getBoundingClientRect();
+      dragPt.x = Math.max(5, Math.min(315, e.clientX - rect.left));
+      dragPt.y = Math.max(5, Math.min(315, e.clientY - rect.top));
+      drawGuide(-1, -1);
+    };
+
+    overlay.onpointerup = function() { dragPt = null; };
+
+    function captureBase() {
+      captureFrame();
+      baseData = offCtx.getImageData(0, 0, 320, 320).data;
+      msg.innerText = '基準画像OK！「2. 認識 START」を押してください';
+      drawGuide(-1, -1);
+    }
+
+    function toggleAuto() {
+      if (!baseData) { msg.innerText = '先に「1. 基準撮影」を押してください'; return; }
+      detecting = !detecting;
+      document.getElementById('btnAuto').innerText = detecting ? '認識中... (停止)' : '2. 認識 START';
+      if (detecting) loopDetect();
+    }
+
+    function calcCode(x, y) {
+      var e = getEllipse();
+      var dx = x - e.cx;
+      var dy = y - e.cy;
+      var cos = Math.cos(-e.rot);
+      var sin = Math.sin(-e.rot);
+      var nx = (dx * cos - dy * sin) / Math.max(10, e.rx);
+      var ny = (dx * sin + dy * cos) / Math.max(10, e.ry);
+      var dist = Math.hypot(nx, ny);
+      if (dist <= 0.05) return 'ib';
+      if (dist <= 0.12) return 'ob';
+      if (dist > 1.06) return '00s';
+
+      var deg = Math.atan2(ny, nx) * 180 / Math.PI + 90 + 9;
+      if (deg < 0) deg += 360;
+      if (deg >= 360) deg -= 360;
+      var idx = Math.floor(deg / 18) % 20;
+      var num = String(boardNums.at(idx)).padStart(2, '0');
+
+      var mult = 's';
+      if (dist >= 0.89 && dist <= 1.06) mult = 'd';
+      else if (dist >= 0.55 && dist <= 0.67) mult = 't';
+      return num + mult;
+    }
+
+    function loopDetect() {
+      if (!detecting) return;
+      if (!cooldown) {
+        captureFrame();
+        var cur = offCtx.getImageData(0, 0, 320, 320).data;
+        var changed = new Array();
+        for (var y = 10; y < 310; y += 2) {
+コードは注意してご使用ください。
+for (var x = 10; x < 310; x += 2) {
+var i = (y * 320 + x) * 4;
+var diff = Math.abs(cur.at(i) - baseData.at(i)) + Math.abs(cur.at(i+1) - baseData.at(i+1)) + Math.abs(cur.at(i+2) - baseData.at(i+2));
+if (diff > 105) changed.push({ x: x, y: y });
+}
+}
+if (changed.length > 30 && changed.length < 2500) {
+changed.sort(function(a, b) { return (cameraSide === 'LEFT') ? (b.x - a.x) : (a.x - b.x); });
+var tipSlice = changed.slice(0, Math.min(15, changed.length));
+var hx = 0, hy = 0;
+for (var k = 0; k < tipSlice.length; k++) {
+hx += tipSlice.at(k).x;
+hy += tipSlice.at(k).y;
+}
+hx /= tipSlice.length;
+hy /= tipSlice.length;
+var code = calcCode(hx, hy);
+drawGuide(hx, hy);
+sendHit(code);
+cooldown = true;
+setTimeout(function() {
+captureFrame();
+baseData = offCtx.getImageData(0, 0, 320, 320).data;
+cooldown = false;
+}, 1800);
+}
+}
+requestAnimationFrame(loopDetect);
+}
+drawGuide(-1, -1);
